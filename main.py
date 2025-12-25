@@ -14,31 +14,59 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Default category map
+CATEGORY_MAP = {
+    'Food & Dining': ['swiggy', 'zomato', 'restaurant', 'cafe', 'starbucks', 'mcdonalds'],
+    'Groceries': ['blinkit', 'zepto', 'bigbasket', 'supermarket', 'mart'],
+    'Transport': ['uber', 'ola', 'rapido', 'petrol', 'fuel', 'metro'],
+    'Shopping': ['amazon', 'flipkart', 'myntra', 'zara', 'h&m'],
+    'Bills & Utilities': ['jio', 'airtel', 'bescom', 'recharge', 'insurance'],
+    'Entertainment': ['netflix', 'prime video', 'hotstar', 'cinema', 'bookmyshow']
+}
+
+def categorize_expense(description):
+    """Checks the description against our keyword map."""
+    desc = str(description).lower()
+    for category, keywords in CATEGORY_MAP.items():
+        for key in keywords:
+            if key in desc:
+                return category
+    return 'Other' # Fallback if no keywords match
+    
 @app.post("/upload")
 async def upload_expenses(files: list[UploadFile] = File(...)):
-    combined_data = []
+    all_dataframes = []
 
     for file in files:
-        # Read the uploaded file (works for CSV)
+        # Read the file (works for CSV, can be extended for XLS)
         content = await file.read()
         df = pd.read_csv(io.BytesIO(content))
         
-        # You can add your "Categorization" logic here
-        # For now, we just append them together
-        combined_data.append(df)
+        # Clean up column names (standardize to lowercase)
+        df.columns = [c.lower().strip() for c in df.columns]
+        
+        # 2. Apply categorization
+        # Assumes your CSV has a column called 'description' or 'narration'
+        desc_col = 'description' if 'description' in df.columns else 'narration'
+        
+        if desc_col in df.columns:
+            df['category'] = df[desc_col].apply(categorize_expense)
+        else:
+            df['category'] = 'Unknown Column'
 
-    # Merge all dataframes into one
-    final_df = pd.concat(combined_data, ignore_index=True)
+        all_dataframes.append(df)
 
-    # Convert the merged dataframe back to a CSV string
+    # 3. Merge all files into one
+    final_df = pd.concat(all_dataframes, ignore_index=True)
+
+    # Convert to CSV for return
     stream = io.StringIO()
     final_df.to_csv(stream, index=False)
     
-    # Return the file as a downloadable response
     return StreamingResponse(
         io.BytesIO(stream.getvalue().encode()),
         media_type="text/csv",
-        headers={"Content-Disposition": "attachment; filename=combined_expenses.csv"}
+        headers={"Content-Disposition": "attachment; filename=kanakku_report.csv"}
     )
 
 if __name__ == "__main__":
