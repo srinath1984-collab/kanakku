@@ -5,3 +5,4 @@ pandas
 google-cloud-firestore
 google-auth
 requests
+google-auth-oauthlib
