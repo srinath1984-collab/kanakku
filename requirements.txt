@@ -1,5 +1,7 @@
-flask-cors
 fastapi
 uvicorn
 python-multipart
 pandas
+google-cloud-firestore
+google-auth
+requests
