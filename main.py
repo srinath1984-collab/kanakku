@@ -63,7 +63,13 @@ async def upload_expenses(files: list[UploadFile] = File(...), authorization: st
         df['category'] = df[desc_col].apply(categorize_expense) if desc_col in df.columns else 'Other'
         
         # 2. Now user_email is defined, so we can save to Firestore
-        user_ref = db.collection("users").document(user_email).collection("expenses")
+        # 1. Get the user document reference
+        user_doc_ref = db.collection("users").document(user_email)
+
+        # 2. Explicitly "Set" the user document (this removes the Italics)
+        # Using merge=True ensures you don't overwrite existing settings
+        user_doc_ref.set({"last_login": firestore.SERVER_TIMESTAMP}, merge=True)
+        user_ref = user_doc_ref.collection("expenses")
         for _, row in df.iterrows():
             user_ref.add({
                 "description": row.get(desc_col, ""),
