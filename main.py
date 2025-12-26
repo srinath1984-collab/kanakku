@@ -93,11 +93,13 @@ async def get_summary(authorization: str = Header(None)):
     user_email = verify_user(token)
     
     expenses = db.collection("users").document(user_email).collection("expenses").stream()
-    
+    print(f"DEBUG: Starting retrieval for {user_email}")    
     summary = {}
+    count = 0
     for exp in expenses:
         data = exp.to_dict()
         cat = data.get('category', 'Other')
         amt = data.get('amount', 0)
         summary[cat] = summary.get(cat, 0) + amt
+    print(f"DEBUG: Successfully retrieved {count} expense documents for {user_email}")
     return summary
