@@ -4,6 +4,7 @@ from fastapi.responses import StreamingResponse
 from google.cloud import firestore
 from google.oauth2 import id_token # Needed for verification
 from google.auth.transport import requests as google_requests # Needed for verification
+from dateutil import parser as date_parser
 import pandas as pd
 import io
 import hashlib
@@ -26,6 +27,25 @@ CATEGORY_MAP = {
     'Transport': ['uber', 'ola', 'petrol'],
     # ... add the rest of your map here ...
 }
+
+def parse_to_month_key(date_str):
+    try:
+        # dateutil.parser automatically detects formats like 12-03-2025 or 2025/03/12
+        # dayfirst=True is helpful for Indian/UK formats (DD-MM-YYYY)
+        dt = date_parser.parse(str(date_str), dayfirst=True)
+        
+        # Returns standardized "2025-03" regardless of input format
+        return dt.strftime("%Y-%m")
+    except Exception as e:
+        print(f"Date Parsing Error: {e} for string {date_str}")
+        return "unknown"
+
+def parse_to_standard_date(date_str):
+    try:
+        dt = date_parser.parse(str(date_str), dayfirst=True)
+        return dt.strftime("%Y-%m-%d") # Standardizes the full date for deduplication
+    except:
+        return str(date_str)
 
 # --- NEW: Helper function to verify the user ---
 def verify_user(token: str):
@@ -85,11 +105,10 @@ async def upload_expenses(files: list[UploadFile] = File(...), authorization: st
             credit_val = self_clean_float(row.get(credit_col))
     
             amt = 0.0
-            date_val = str(row.get('date', ''))
-            # Create month_key (Handles dates like 2025-12-25 or 25/12/2025)
-            # If your CSV date is YYYY-MM-DD, we take the first 7 chars
-            month_key = date_val[:7] if '-' in date_val else "unknown"
-            
+            raw_date = str(row.get('date', ''))
+            standard_date = parse_to_standard_date(raw_date)
+            month_key = parse_to_month_key(raw_date)
+                      
             # 2. Determine Expense Amount
             # If there is a Debit value, that is our primary expense
             if debit_val > 0:
@@ -102,7 +121,7 @@ async def upload_expenses(files: list[UploadFile] = File(...), authorization: st
                 "description": row.get(desc_col, ""),
                 "amount": amt,
                 "category": row.get('category', 'Other'),
-                "date": row.get('date', ""),
+                "date": standard_date,
                 "month_key": month_key,
                 "created_at": firestore.SERVER_TIMESTAMP
             }, merge=True)
