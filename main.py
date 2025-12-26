@@ -59,8 +59,12 @@ async def upload_expenses(files: list[UploadFile] = File(...), authorization: st
         df = pd.read_csv(io.BytesIO(content))
         df.columns = [c.lower().strip() for c in df.columns]
         
-        desc_col = 'description' if 'description' in df.columns else 'narration'
+        # 1. Detect Columns
+        desc_col = next((c for c in ['description', 'narration', 'remarks'] if c in df.columns), None)
+        debit_col = next((c for c in ['debit', 'withdrawal', 'dr'] if c in df.columns), None)
+        credit_col = next((c for c in ['credit', 'deposit', 'cr'] if c in df.columns), None)
         df['category'] = df[desc_col].apply(categorize_expense) if desc_col in df.columns else 'Other'
+        
         
         # 2. Now user_email is defined, so we can save to Firestore
         # 1. Get the user document reference
@@ -75,9 +79,22 @@ async def upload_expenses(files: list[UploadFile] = File(...), authorization: st
                          }, merge=True)
         user_ref = user_doc_ref.collection("expenses")
         for _, row in df.iterrows():
+            # Get numeric values using the helper function
+            debit_val = self_clean_float(row.get(debit_col))
+            credit_val = self_clean_float(row.get(credit_col))
+    
+            amt = 0.0
+            
+            # 2. Determine Expense Amount
+            # If there is a Debit value, that is our primary expense
+            if debit_val > 0:
+                amt = debit_val
+            # If there is a negative Credit value, it's often a charge/expense
+            elif credit_val < 0:
+                amt = credit_val
             user_ref.add({
                 "description": row.get(desc_col, ""),
-                "amount": float(row.get('amount', 0)),
+                "amount": amt,
                 "category": row.get('category', 'Other'),
                 "date": row.get('date', ""),
                 "created_at": firestore.SERVER_TIMESTAMP
@@ -107,9 +124,21 @@ async def get_summary(authorization: str = Header(None)):
     summary = {}
     count = 0
     for exp in expenses:
+        count = count + 1
         data = exp.to_dict()
         cat = data.get('category', 'Other')
         amt = data.get('amount', 0)
         summary[cat] = summary.get(cat, 0) + amt
     print(f"DEBUG: Successfully retrieved {count} expense documents for {user_email}")
     return summary
+def self_clean_float(val):
+    """Utility to turn messy CSV strings into clean floats."""
+    if pd.isna(val) or val == "": return 0.0
+    try:
+        if isinstance(val, str):
+            # Remove currency symbols, commas, and spaces
+            s = val.replace('₹', '').replace(',', '').replace('$','').strip()
+            return float(s) if s else 0.0
+        return float(val)
+    except:
+        return 0.0
