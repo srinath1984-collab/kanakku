@@ -116,7 +116,7 @@ async def upload_expenses(files: list[UploadFile] = File(...), authorization: st
             # If there is a negative Credit value, it's often a charge/expense
             elif credit_val < 0:
                 amt = credit_val
-            tx_id = generate_tx_id(user_email, date_val, row[desc_col], amt)
+            tx_id = generate_tx_id(user_email, standard_date, row[desc_col], amt)
             user_ref.document(tx_id).set({
                 "description": row.get(desc_col, ""),
                 "amount": amt,
