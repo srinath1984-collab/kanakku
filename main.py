@@ -138,7 +138,7 @@ async def upload_expenses(files: list[UploadFile] = File(...), authorization: st
     )
 
 @app.get("/summary")
-async def get_summary(authorization: str = Header(None)):
+async def get_summary(month: str = None, authorization: str = Header(None)):
     if not authorization:
         raise HTTPException(status_code=401, detail="No authorization header")
         
