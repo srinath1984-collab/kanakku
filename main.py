@@ -6,6 +6,7 @@ from google.oauth2 import id_token # Needed for verification
 from google.auth.transport import requests as google_requests # Needed for verification
 import pandas as pd
 import io
+import hashlib
 
 app = FastAPI()
 db = firestore.Client(database="kanakku")
@@ -92,13 +93,14 @@ async def upload_expenses(files: list[UploadFile] = File(...), authorization: st
             # If there is a negative Credit value, it's often a charge/expense
             elif credit_val < 0:
                 amt = credit_val
-            user_ref.add({
+            tx_id = generate_tx_id(user_email, row.get('date'), row[desc_col], amt)
+            user_ref.document(tx_id).set({
                 "description": row.get(desc_col, ""),
                 "amount": amt,
                 "category": row.get('category', 'Other'),
                 "date": row.get('date', ""),
                 "created_at": firestore.SERVER_TIMESTAMP
-            })
+            }, merge=True)
         all_dataframes.append(df)
 
     final_df = pd.concat(all_dataframes, ignore_index=True)
@@ -131,6 +133,7 @@ async def get_summary(authorization: str = Header(None)):
         summary[cat] = summary.get(cat, 0) + amt
     print(f"DEBUG: Successfully retrieved {count} expense documents for {user_email}")
     return summary
+    
 def self_clean_float(val):
     """Utility to turn messy CSV strings into clean floats."""
     if pd.isna(val) or val == "": return 0.0
@@ -142,3 +145,8 @@ def self_clean_float(val):
         return float(val)
     except:
         return 0.0
+        
+def generate_tx_id(user_email, date, description, amount):
+    # Create a unique string for the transaction
+    raw_str = f"{user_email}|{date}|{description}|{amount}"
+    return hashlib.md5(raw_str.encode()).hexdigest()
