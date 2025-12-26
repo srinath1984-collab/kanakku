@@ -99,6 +99,7 @@ async def upload_expenses(files: list[UploadFile] = File(...), authorization: st
                 "amount": amt,
                 "category": row.get('category', 'Other'),
                 "date": row.get('date', ""),
+                "month_key": str(row.get('date', ''))[:7], # Stores as "2025-12"
                 "created_at": firestore.SERVER_TIMESTAMP
             }, merge=True)
         all_dataframes.append(df)
@@ -120,8 +121,12 @@ async def get_summary(authorization: str = Header(None)):
         
     token = authorization.split(" ")[1]
     user_email = verify_user(token)
-    
-    expenses = db.collection("users").document(user_email).collection("expenses").stream()
+    query = db.collection("users").document(user_email).collection("expenses")
+    # If a month is provided (e.g., "2025-12"), filter by it
+    if month:
+        expenses = query.where("month_key", "==", month).stream()
+    else:
+        expenses = query.stream()   
     print(f"DEBUG: Starting retrieval for {user_email}")    
     summary = {}
     count = 0
