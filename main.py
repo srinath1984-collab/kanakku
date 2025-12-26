@@ -64,11 +64,15 @@ async def upload_expenses(files: list[UploadFile] = File(...), authorization: st
         
         # 2. Now user_email is defined, so we can save to Firestore
         # 1. Get the user document reference
+        db.collection("users").document(user_email).set({"active": True}, merge=True)
         user_doc_ref = db.collection("users").document(user_email)
 
         # 2. Explicitly "Set" the user document (this removes the Italics)
         # Using merge=True ensures you don't overwrite existing settings
-        user_doc_ref.set({"last_login": firestore.SERVER_TIMESTAMP}, merge=True)
+        user_doc_ref.set({"last_login": firestore.SERVER_TIMESTAMP,
+                         "last_active": firestore.SERVER_TIMESTAMP,
+                         "email": user_email
+                         }, merge=True)
         user_ref = user_doc_ref.collection("expenses")
         for _, row in df.iterrows():
             user_ref.add({
