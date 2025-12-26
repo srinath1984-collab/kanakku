@@ -85,6 +85,10 @@ async def upload_expenses(files: list[UploadFile] = File(...), authorization: st
             credit_val = self_clean_float(row.get(credit_col))
     
             amt = 0.0
+            date_val = str(row.get('date', ''))
+            # Create month_key (Handles dates like 2025-12-25 or 25/12/2025)
+            # If your CSV date is YYYY-MM-DD, we take the first 7 chars
+            month_key = date_val[:7] if '-' in date_val else "unknown"
             
             # 2. Determine Expense Amount
             # If there is a Debit value, that is our primary expense
@@ -93,13 +97,13 @@ async def upload_expenses(files: list[UploadFile] = File(...), authorization: st
             # If there is a negative Credit value, it's often a charge/expense
             elif credit_val < 0:
                 amt = credit_val
-            tx_id = generate_tx_id(user_email, row.get('date'), row[desc_col], amt)
+            tx_id = generate_tx_id(user_email, date_val, row[desc_col], amt)
             user_ref.document(tx_id).set({
                 "description": row.get(desc_col, ""),
                 "amount": amt,
                 "category": row.get('category', 'Other'),
                 "date": row.get('date', ""),
-                "month_key": str(row.get('date', ''))[:7], # Stores as "2025-12"
+                "month_key": month_key,
                 "created_at": firestore.SERVER_TIMESTAMP
             }, merge=True)
         all_dataframes.append(df)
