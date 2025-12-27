@@ -64,6 +64,18 @@ def categorize_expense(description):
                 return category
     return 'Other'
     
+@app.get("/available-months")
+async def get_months(authorization: str = Header(None)):
+    user_email = verify_user(authorization.split(" ")[1]).lower().strip()
+    
+    # Fetch only the month_key field from all expenses
+    docs = db.collection("users").document(user_email).collection("expenses").select(["month_key"]).stream()
+    
+    # Use a set to get unique keys and sort them descending
+    months = sorted(list(set(d.to_dict().get('month_key') for d in docs if d.to_dict().get('month_key'))), reverse=True)
+    
+    return {"months": months}    
+    
 @app.post("/upload")
 async def upload_expenses(files: list[UploadFile] = File(...), authorization: str = Header(None)):
     # 1. Get the user email from the token
