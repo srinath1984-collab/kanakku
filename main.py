@@ -28,11 +28,11 @@ CATEGORY_MAP = {
     # ... add the rest of your map here ...
 }
 
-def parse_to_month_key(date_str):
+def parse_to_month_key(date_str, dayfirst_pref):
     try:
         # dateutil.parser automatically detects formats like 12-03-2025 or 2025/03/12
         # dayfirst=True is helpful for Indian/UK formats (DD-MM-YYYY)
-        dt = date_parser.parse(str(date_str), dayfirst=True)
+        dt = date_parser.parse(str(date_str), dayfirst=dayfirst_pref)
         
         # Returns standardized "2025-03" regardless of input format
         return dt.strftime("%Y-%m")
@@ -40,9 +40,9 @@ def parse_to_month_key(date_str):
         print(f"Date Parsing Error: {e} for string {date_str}")
         return "unknown"
 
-def parse_to_standard_date(date_str):
+def parse_to_standard_date(date_str, dayfirst_pref):
     try:
-        dt = date_parser.parse(str(date_str), dayfirst=True)
+        dt = date_parser.parse(str(date_str), dayfirst=dayfirst_pref)
         return dt.strftime("%Y-%m-%d") # Standardizes the full date for deduplication
     except:
         return str(date_str)
@@ -63,6 +63,21 @@ def categorize_expense(description):
             if key in desc:
                 return category
     return 'Other'
+
+@app.get("/preferences")
+async def get_prefs(authorization: str = Header(None)):
+    user_email = verify_user(authorization.split(" ")[1]).lower().strip()
+    doc = db.collection("users").document(user_email).collection("settings").document("preferences").get()
+    if doc.exists:
+        return doc.to_dict()
+    # Default values
+    return {"currency": "₹", "dayfirst": True}
+
+@app.post("/preferences")
+async def save_prefs(prefs: dict, authorization: str = Header(None)):
+    user_email = verify_user(authorization.split(" ")[1]).lower().strip()
+    db.collection("users").document(user_email).collection("settings").document("preferences").set(prefs)
+    return {"status": "success"}
     
 @app.get("/available-months")
 async def get_months(authorization: str = Header(None)):
@@ -84,6 +99,8 @@ async def upload_expenses(files: list[UploadFile] = File(...), authorization: st
     
     token = authorization.split(" ")[1] # Gets the token after "Bearer"
     user_email = verify_user(token)
+    prefs_doc = db.collection("users").document(user_email).collection("settings").document("preferences").get()
+    user_prefs = prefs_doc.to_dict() if prefs_doc.exists else {"dayfirst": True}
 
     all_dataframes = []
 
@@ -118,8 +135,9 @@ async def upload_expenses(files: list[UploadFile] = File(...), authorization: st
     
             amt = 0.0
             raw_date = str(row.get('date', ''))
-            standard_date = parse_to_standard_date(raw_date)
-            month_key = parse_to_month_key(raw_date)
+            dayfirst_pref = user_prefs.get('dayfirst', True)
+            standard_date = parse_to_standard_date(raw_date, dayfirst_pref)
+            month_key = parse_to_month_key(raw_date, dayfirst_pref)
                       
             # 2. Determine Expense Amount
             # If there is a Debit value, that is our primary expense
