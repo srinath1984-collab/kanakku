@@ -16,7 +16,7 @@ app = FastAPI()
 db = firestore.Client(database="kanakku")
 # Initialize Vertex AI (Cloud Run handles credentials automatically)
 vertexai.init(project="kanakku-477505", location="us-central1")
-model = GenerativeModel("gemini-2.5-flash")
+model = GenerativeModel("gemini-2.5-flash-lite")
 
 # Replace with your actual Google Client ID from GCP Console
 GOOGLE_CLIENT_ID = "940001353287-3mu3k6jd76haav5dn6tfemu46mk76dnt.apps.googleusercontent.com"
