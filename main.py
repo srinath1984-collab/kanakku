@@ -8,9 +8,15 @@ from dateutil import parser as date_parser
 import pandas as pd
 import io
 import hashlib
+import vertexai
+from vertexai.generative_models import GenerativeModel
+import json
 
 app = FastAPI()
 db = firestore.Client(database="kanakku")
+# Initialize Vertex AI (Cloud Run handles credentials automatically)
+vertexai.init(project="kanakku-477505", location="us-central1")
+model = GenerativeModel("gemini-1.5-flash")
 
 # Replace with your actual Google Client ID from GCP Console
 GOOGLE_CLIENT_ID = "940001353287-3mu3k6jd76haav5dn6tfemu46mk76dnt.apps.googleusercontent.com"
@@ -63,6 +69,36 @@ def categorize_expense(description):
             if key in desc:
                 return category
     return 'Other'
+
+def categorize_with_llm(descriptions):
+    if not descriptions:
+        return []
+
+    # Providing examples (Few-Shot) helps the LLM stay consistent
+    prompt = f"""
+    Categorize these bank transactions into exactly one of these categories:
+    Food, Transport, Shopping, Bills, Entertainment, Income, Subscription, Fuel, Other
+
+    Return ONLY a JSON list of strings. No markdown, no explanation.
+    
+    Examples:
+    "UBER PENDING" -> "Transport"
+    "ZOMATO*RESTAURANT" -> "Food"
+    "REVERSAL-FEE" -> "Income"
+    
+    Transactions to categorize:
+    {json.dumps(descriptions)}
+    """
+
+    response = model.generate_content(prompt)
+    
+    # Clean potential markdown wrapping from LLM response
+    clean_text = response.text.replace("```json", "").replace("```", "").strip()
+    try:
+        return json.loads(clean_text)
+    except:
+        # Fallback if JSON parsing fails
+        return ["Other"] * len(descriptions)
     
 @app.get("/analytics")
 async def get_analytics(authorization: str = Header(None)):
@@ -134,80 +170,63 @@ async def get_months(authorization: str = Header(None)):
     
 @app.post("/upload")
 async def upload_expenses(files: list[UploadFile] = File(...), authorization: str = Header(None)):
-    # 1. Get the user email from the token
-    if not authorization:
-        raise HTTPException(status_code=401, detail="No authorization header")
+    token = authorization.split(" ")[1]
+    user_email = verify_user(token).lower().strip()
     
-    token = authorization.split(" ")[1] # Gets the token after "Bearer"
-    user_email = verify_user(token)
+    # 1. Fetch Preferences
     prefs_doc = db.collection("users").document(user_email).collection("settings").document("preferences").get()
-    user_prefs = prefs_doc.to_dict() if prefs_doc.exists else {"dayfirst": True}
+    dayfirst_pref = prefs_doc.to_dict().get('dayfirst', True) if prefs_doc.exists else True
 
-    all_dataframes = []
+    all_rows = []
 
     for file in files:
-        content = await file.read()
-        df = pd.read_csv(io.BytesIO(content))
+        df = pd.read_csv(io.BytesIO(await file.read()))
         df.columns = [c.lower().strip() for c in df.columns]
         
-        # 1. Detect Columns
         desc_col = next((c for c in ['description', 'narration', 'remarks'] if c in df.columns), None)
         debit_col = next((c for c in ['debit', 'withdrawal', 'dr'] if c in df.columns), None)
         credit_col = next((c for c in ['credit', 'deposit', 'cr'] if c in df.columns), None)
-        df['category'] = df[desc_col].apply(categorize_expense) if desc_col in df.columns else 'Other'
-        
-        
-        # 2. Now user_email is defined, so we can save to Firestore
-        # 1. Get the user document reference
-        db.collection("users").document(user_email).set({"active": True}, merge=True)
-        user_doc_ref = db.collection("users").document(user_email)
 
-        # 2. Explicitly "Set" the user document (this removes the Italics)
-        # Using merge=True ensures you don't overwrite existing settings
-        user_doc_ref.set({"last_login": firestore.SERVER_TIMESTAMP,
-                         "last_active": firestore.SERVER_TIMESTAMP,
-                         "email": user_email
-                         }, merge=True)
-        user_ref = user_doc_ref.collection("expenses")
         for _, row in df.iterrows():
-            # Get numeric values using the helper function
-            debit_val = self_clean_float(row.get(debit_col))
-            credit_val = self_clean_float(row.get(credit_col))
-    
-            amt = 0.0
-            raw_date = str(row.get('date', ''))
-            dayfirst_pref = user_prefs.get('dayfirst', True)
-            standard_date = parse_to_standard_date(raw_date, dayfirst_pref)
-            month_key = parse_to_month_key(raw_date, dayfirst_pref)
-                      
-            # 2. Determine Expense Amount
-            # If there is a Debit value, that is our primary expense
-            if debit_val > 0:
-                amt = debit_val
-            # If there is a negative Credit value, it's often a charge/expense
-            elif credit_val < 0:
-                amt = credit_val
-            tx_id = generate_tx_id(user_email, standard_date, row[desc_col], amt)
-            user_ref.document(tx_id).set({
-                "description": row.get(desc_col, ""),
-                "amount": amt,
-                "category": row.get('category', 'Other'),
-                "date": standard_date,
-                "month_key": month_key,
-                "created_at": firestore.SERVER_TIMESTAMP
-            }, merge=True)
-        all_dataframes.append(df)
+            desc = str(row.get(desc_col, "Unknown"))
+            amt = self_clean_float(row.get(debit_col)) or -self_clean_float(row.get(credit_col))
+            
+            # We only track spending (amt > 0) or income (amt < 0)
+            if amt == 0: continue
 
-    final_df = pd.concat(all_dataframes, ignore_index=True)
-    stream = io.StringIO()
-    final_df.to_csv(stream, index=False)
-    
-    return StreamingResponse(
-        io.BytesIO(stream.getvalue().encode()),
-        media_type="text/csv",
-        headers={"Content-Disposition": "attachment; filename=kanakku_report.csv"}
-    )
+            all_rows.append({
+                "raw_desc": desc,
+                "amount": abs(amt),
+                "is_income": amt < 0,
+                "date": str(row.get('date', ''))
+            })
 
+    # 2. Batch LLM Categorization (Tier 2)
+    descriptions = [r['raw_desc'] for r in all_rows]
+    llm_categories = categorize_with_llm(descriptions)
+
+    # 3. Save to Firestore
+    user_ref = db.collection("users").document(user_email).collection("expenses")
+    for i, row in enumerate(all_rows):
+        std_date = parse_to_standard_date(row['date'], dayfirst_pref)
+        m_key = parse_to_month_key(row['date'], dayfirst_pref)
+        
+        # Override LLM if it's clearly income based on column logic
+        final_cat = "Income" if row['is_income'] else llm_categories[i]
+        
+        tx_id = generate_tx_id(user_email, std_date, row['raw_desc'], row['amount'])
+        
+        user_ref.document(tx_id).set({
+            "description": row['raw_desc'],
+            "amount": row['amount'],
+            "category": final_cat,
+            "date": std_date,
+            "month_key": m_key,
+            "created_at": firestore.SERVER_TIMESTAMP
+        }, merge=True)
+
+    return {"status": "success", "count": len(all_rows)}
+    
 @app.get("/summary")
 async def get_summary(month: str = None, authorization: str = Header(None)):
     if not authorization:
