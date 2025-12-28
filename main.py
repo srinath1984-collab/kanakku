@@ -64,6 +64,31 @@ def categorize_expense(description):
                 return category
     return 'Other'
 
+@app.post("/upload")
+async def upload_expenses(...):
+    # ... your existing logic to save to Firestore ...
+    # Instead of return StreamingResponse, just return:
+    return {"status": "success", "message": f"Processed {len(all_dfs)} files."}
+
+@app.get("/download")
+async def download_csv(month: str, authorization: str = Header(None)):
+    user_email = verify_user(authorization.split(" ")[1]).lower().strip()
+    
+    # Query only the data for the specific month
+    docs = db.collection("users").document(user_email).collection("expenses").where("month_key", "==", month).stream()
+    
+    data = [doc.to_dict() for doc in docs]
+    df = pd.DataFrame(data)
+    
+    stream = io.StringIO()
+    df.to_csv(stream, index=False)
+    
+    return StreamingResponse(
+        io.BytesIO(stream.getvalue().encode()),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=report_{month}.csv"}
+    )
+    
 @app.get("/preferences")
 async def get_prefs(authorization: str = Header(None)):
     user_email = verify_user(authorization.split(" ")[1]).lower().strip()
