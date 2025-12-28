@@ -99,7 +99,26 @@ def categorize_with_llm(descriptions):
     except:
         # Fallback if JSON parsing fails
         return ["Other"] * len(descriptions)
+        
+class UpdateTx(BaseModel):
+    doc_id: str
+    category: str
 
+@app.post("/update-transaction")
+async def update_transaction(data: UpdateTx, authorization: str = Header(None)):
+    user_email = verify_user(authorization.split(" ")[1]).lower().strip()
+    
+    # Path to the specific transaction document
+    doc_ref = db.collection("users").document(user_email).collection("expenses").document(data.doc_id)
+    
+    if not doc_ref.get().exists:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+        
+    # Update only the category field
+    doc_ref.update({"category": data.category})
+    
+    return {"status": "success"}
+    
 @app.get("/drilldown")
 async def get_drilldown(month: str, categories: str = None, authorization: str = Header(None)):
     user_email = verify_user(authorization.split(" ")[1]).lower().strip()
