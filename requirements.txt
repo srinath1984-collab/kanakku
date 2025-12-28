@@ -7,3 +7,4 @@ google-auth
 requests
 google-auth-oauthlib
 python-dateutil
+google-cloud-aiplatform
