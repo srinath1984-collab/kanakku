@@ -173,35 +173,49 @@ async def upload_expenses(files: list[UploadFile] = File(...), authorization: st
     token = authorization.split(" ")[1]
     user_email = verify_user(token).lower().strip()
     
-    # 1. Fetch Preferences
     prefs_doc = db.collection("users").document(user_email).collection("settings").document("preferences").get()
     dayfirst_pref = prefs_doc.to_dict().get('dayfirst', True) if prefs_doc.exists else True
 
     all_rows = []
 
     for file in files:
-        df = pd.read_csv(io.BytesIO(await file.read()))
+        content = await file.read() # Read content
+        df = pd.read_csv(io.BytesIO(content))
         df.columns = [c.lower().strip() for c in df.columns]
         
-        desc_col = next((c for c in ['description', 'narration', 'remarks'] if c in df.columns), None)
+        # Enhanced Detection: Look for 'amount' if debit/credit aren't found
+        desc_col = next((c for c in ['description', 'narration', 'remarks', 'details'] if c in df.columns), None)
         debit_col = next((c for c in ['debit', 'withdrawal', 'dr'] if c in df.columns), None)
         credit_col = next((c for c in ['credit', 'deposit', 'cr'] if c in df.columns), None)
+        amt_col = next((c for c in ['amount', 'value', 'transaction amount'] if c in df.columns), None)
 
         for _, row in df.iterrows():
-            desc = str(row.get(desc_col, "Unknown"))
-            amt = self_clean_float(row.get(debit_col)) or -self_clean_float(row.get(credit_col))
+            # Try specific columns first, then general amount column
+            d_val = self_clean_float(row.get(debit_col)) if debit_col else 0.0
+            c_val = self_clean_float(row.get(credit_col)) if credit_col else 0.0
+            a_val = self_clean_float(row.get(amt_col)) if amt_col else 0.0
             
-            # We only track spending (amt > 0) or income (amt < 0)
+            # Logic: If Debit/Credit exist, use them. Otherwise use general Amount.
+            if d_val != 0:
+                amt = d_val
+            elif c_val != 0:
+                amt = -c_val # Negative means Income
+            else:
+                amt = a_val # Could be + or - depending on bank
+
             if amt == 0: continue
 
             all_rows.append({
-                "raw_desc": desc,
+                "raw_desc": str(row.get(desc_col, "Unknown")),
                 "amount": abs(amt),
                 "is_income": amt < 0,
                 "date": str(row.get('date', ''))
             })
 
-    # 2. Batch LLM Categorization (Tier 2)
+    if not all_rows:
+        return {"status": "error", "message": "No valid transactions found in CSV."}
+
+    # 2. Batch LLM Categorization
     descriptions = [r['raw_desc'] for r in all_rows]
     llm_categories = categorize_with_llm(descriptions)
 
@@ -210,8 +224,6 @@ async def upload_expenses(files: list[UploadFile] = File(...), authorization: st
     for i, row in enumerate(all_rows):
         std_date = parse_to_standard_date(row['date'], dayfirst_pref)
         m_key = parse_to_month_key(row['date'], dayfirst_pref)
-        
-        # Override LLM if it's clearly income based on column logic
         final_cat = "Income" if row['is_income'] else llm_categories[i]
         
         tx_id = generate_tx_id(user_email, std_date, row['raw_desc'], row['amount'])
