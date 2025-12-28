@@ -63,7 +63,29 @@ def categorize_expense(description):
             if key in desc:
                 return category
     return 'Other'
-
+    
+@app.get("/analytics")
+async def get_analytics(authorization: str = Header(None)):
+    user_email = verify_user(authorization.split(" ")[1]).lower().strip()
+    
+    # Fetch all expenses for this user
+    docs = db.collection("users").document(user_email).collection("expenses").stream()
+    
+    # We want a structure like: {"2025-01": {"Food": 500, "Transport": 200}, "2025-02": {...}}
+    history = {}
+    for doc in docs:
+        d = doc.to_dict()
+        m = d.get('month_key', 'unknown')
+        cat = d.get('category', 'Other')
+        amt = d.get('amount', 0)
+        
+        if m not in history: history[m] = {}
+        history[m][cat] = history.get(m).get(cat, 0) + amt
+        
+    # Sort by month key so the charts flow correctly
+    sorted_history = dict(sorted(history.items()))
+    return sorted_history
+    
 @app.post("/upload")
 async def upload_expenses(...):
     # ... your existing logic to save to Firestore ...
