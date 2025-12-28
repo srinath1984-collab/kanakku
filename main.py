@@ -70,16 +70,16 @@ def categorize_expense(description):
                 return category
     return 'Other'
 
-def categorize_with_llm(descriptions):
+def categorize_with_llm(descriptions, user_categories):
     if not descriptions:
         return []
 
-    # Providing examples (Few-Shot) helps the LLM stay consistent
-    prompt = f"""
-    Categorize these bank transactions into exactly one of these categories:
-    Food, Transport, Shopping, Bills, Entertainment, Income, Subscription, Fuel, Other
-
-    Return ONLY a JSON list of strings. No markdown, no explanation.
+    # Inject the user's specific categories into the prompt
+    category_list_str = ", ".join(user_categories)
+    system_instruction = f"""
+    You are a financial assistant. Categorize these transactions into EXACTLY ONE 
+    of these user-defined categories: {category_list_str}, or 'Other'.
+    Return ONLY a JSON list of strings in the same order as the input. No markdown, no explanation.
     
     Examples:
     "UBER PENDING" -> "Transport"
@@ -90,8 +90,11 @@ def categorize_with_llm(descriptions):
     {json.dumps(descriptions)}
     """
 
-    response = model.generate_content(prompt)
-    
+    response = model.generate_content(
+            f"Categorize: {json.dumps(descriptions)}",
+            system_instruction=system_instruction,
+            generation_config={"response_mime_type": "application/json"}
+        )    
     # Clean potential markdown wrapping from LLM response
     clean_text = response.text.replace("```json", "").replace("```", "").strip()
     try:
@@ -212,6 +215,8 @@ async def upload_expenses(files: list[UploadFile] = File(...), authorization: st
     
     prefs_doc = db.collection("users").document(user_email).collection("settings").document("preferences").get()
     dayfirst_pref = prefs_doc.to_dict().get('dayfirst', True) if prefs_doc.exists else True
+    prefs_data = prefs_doc.to_dict() if prefs_doc.exists else {}
+    user_categories = prefs_data.get('categories', ["Food", "Transport", "Shopping", "Bills", "Entertainment", "Income", "Subscription", "Fuel", "Other"])
 
     all_rows = []
 
