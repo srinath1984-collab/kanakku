@@ -99,6 +99,23 @@ def categorize_with_llm(descriptions):
     except:
         # Fallback if JSON parsing fails
         return ["Other"] * len(descriptions)
+
+@app.get("/drilldown")
+async def get_drilldown(month: str, categories: str = None, authorization: str = Header(None)):
+    user_email = verify_user(authorization.split(" ")[1]).lower().strip()
+    
+    query = db.collection("users").document(user_email).collection("expenses")
+    query = query.where("month_key", "==", month)
+    
+    # categories is a comma-separated string from the frontend
+    if categories:
+        cat_list = categories.split(",")
+        # Use 'in' operator for multiple categories
+        query = query.where("category", "in", cat_list)
+    
+    docs = query.order_by("date", direction=firestore.Query.DESCENDING).stream()
+    
+    return [doc.to_dict() for doc in docs]
     
 @app.get("/analytics")
 async def get_analytics(authorization: str = Header(None)):
