@@ -86,12 +86,6 @@ async def get_analytics(authorization: str = Header(None)):
     sorted_history = dict(sorted(history.items()))
     return sorted_history
     
-@app.post("/upload")
-async def upload_expenses(...):
-    # ... your existing logic to save to Firestore ...
-    # Instead of return StreamingResponse, just return:
-    return {"status": "success", "message": f"Processed {len(all_dfs)} files."}
-
 @app.get("/download")
 async def download_csv(month: str, authorization: str = Header(None)):
     user_email = verify_user(authorization.split(" ")[1]).lower().strip()
