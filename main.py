@@ -170,6 +170,7 @@ async def get_months(authorization: str = Header(None)):
     
 @app.post("/upload")
 async def upload_expenses(files: list[UploadFile] = File(...), authorization: str = Header(None)):
+    print("DEBUG: 1. Upload endpoint hit")
     token = authorization.split(" ")[1]
     user_email = verify_user(token).lower().strip()
     
@@ -182,6 +183,7 @@ async def upload_expenses(files: list[UploadFile] = File(...), authorization: st
         content = await file.read() # Read content
         df = pd.read_csv(io.BytesIO(content))
         df.columns = [c.lower().strip() for c in df.columns]
+        print(f"DEBUG: 2. File read. Rows in CSV: {len(df)}")
         
         # Enhanced Detection: Look for 'amount' if debit/credit aren't found
         desc_col = next((c for c in ['description', 'narration', 'remarks', 'details'] if c in df.columns), None)
@@ -211,16 +213,24 @@ async def upload_expenses(files: list[UploadFile] = File(...), authorization: st
                 "is_income": amt < 0,
                 "date": str(row.get('date', ''))
             })
-    print(f"DEBUG: Done parsing {len(all_rows)}")
+    print(f"DEBUG 3: Done parsing {len(all_rows)}")
 
     if not all_rows:
+        print("DEBUG: 4. ERROR: No rows to process")
         return {"status": "error", "message": "No valid transactions found in CSV."}
 
-    # 2. Batch LLM Categorization
-    descriptions = [r['raw_desc'] for r in all_rows]
-    llm_categories = categorize_with_llm(descriptions)
+  # --- THE MOST LIKELY CRASH POINT ---
+    print("DEBUG: 5. Calling Gemini LLM...")
+    try:
+        descriptions = [r['raw_desc'] for r in all_rows]
+        llm_categories = categorize_with_llm(descriptions)
+        print(f"DEBUG: 6. Gemini returned {len(llm_categories)} categories")
+    except Exception as e:
+        print(f"DEBUG: 6. ERROR: Gemini Failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"AI Categorization Failed: {str(e)}")
 
     # 3. Save to Firestore
+    print("DEBUG: 7. Starting Firestore Writes...")
     user_ref = db.collection("users").document(user_email).collection("expenses")
     for i, row in enumerate(all_rows):
         std_date = parse_to_standard_date(row['date'], dayfirst_pref)
@@ -237,7 +247,7 @@ async def upload_expenses(files: list[UploadFile] = File(...), authorization: st
             "month_key": m_key,
             "created_at": firestore.SERVER_TIMESTAMP
         }, merge=True)
-
+    print("DEBUG: 8. Upload Complete")
     return {"status": "success", "count": len(all_rows)}
     
 @app.get("/summary")
