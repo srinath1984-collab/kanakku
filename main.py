@@ -211,6 +211,7 @@ async def upload_expenses(files: list[UploadFile] = File(...), authorization: st
                 "is_income": amt < 0,
                 "date": str(row.get('date', ''))
             })
+    print(f"DEBUG: Done parsing {len(all_rows)}")
 
     if not all_rows:
         return {"status": "error", "message": "No valid transactions found in CSV."}
