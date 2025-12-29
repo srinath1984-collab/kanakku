@@ -137,8 +137,13 @@ async def get_drilldown(month: str, categories: str = None, authorization: str =
     
     docs = query.order_by("date", direction=firestore.Query.DESCENDING).stream()
     
-    return [doc.to_dict() for doc in docs]
-    
+    results = []
+        for doc in docs:
+            data = doc.to_dict()
+            data['id'] = doc.id  # <--- CRUCIAL: Add the Firestore ID to the dict
+            results.append(data)
+    return results    
+
 @app.get("/analytics")
 async def get_analytics(authorization: str = Header(None)):
     user_email = verify_user(authorization.split(" ")[1]).lower().strip()
