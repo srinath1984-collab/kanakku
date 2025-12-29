@@ -11,6 +11,7 @@ import hashlib
 import vertexai
 from vertexai.generative_models import GenerativeModel
 import json
+from pydantic import BaseModel
 
 app = FastAPI()
 db = firestore.Client(database="kanakku")
@@ -33,6 +34,23 @@ CATEGORY_MAP = {
     'Transport': ['uber', 'ola', 'petrol'],
     # ... add the rest of your map here ...
 }
+   
+def self_clean_float(val):
+    """Utility to turn messy CSV strings into clean floats."""
+    if pd.isna(val) or val == "": return 0.0
+    try:
+        if isinstance(val, str):
+            # Remove currency symbols, commas, and spaces
+            s = val.replace('₹', '').replace(',', '').replace('$','').strip()
+            return float(s) if s else 0.0
+        return float(val)
+    except:
+        return 0.0
+        
+def generate_tx_id(user_email, date, description, amount):
+    # Create a unique string for the transaction
+    raw_str = f"{user_email}|{date}|{description}|{amount}"
+    return hashlib.md5(raw_str.encode()).hexdigest()
 
 def parse_to_month_key(date_str, dayfirst_pref):
     try:
@@ -269,7 +287,7 @@ async def upload_expenses(files: list[UploadFile] = File(...), authorization: st
     print("DEBUG: 5. Calling Gemini LLM...")
     try:
         descriptions = [r['raw_desc'] for r in all_rows]
-        llm_categories = categorize_with_llm(descriptions)
+        llm_categories = categorize_with_llm(descriptions, user_categories)
         print(f"DEBUG: 6. Gemini returned {len(llm_categories)} categories")
     except Exception as e:
         print(f"DEBUG: 6. ERROR: Gemini Failed: {str(e)}")
@@ -320,20 +338,4 @@ async def get_summary(month: str = None, authorization: str = Header(None)):
         summary[cat] = summary.get(cat, 0) + amt
     print(f"DEBUG: Successfully retrieved {count} expense documents for {user_email}")
     return summary
-    
-def self_clean_float(val):
-    """Utility to turn messy CSV strings into clean floats."""
-    if pd.isna(val) or val == "": return 0.0
-    try:
-        if isinstance(val, str):
-            # Remove currency symbols, commas, and spaces
-            s = val.replace('₹', '').replace(',', '').replace('$','').strip()
-            return float(s) if s else 0.0
-        return float(val)
-    except:
-        return 0.0
-        
-def generate_tx_id(user_email, date, description, amount):
-    # Create a unique string for the transaction
-    raw_str = f"{user_email}|{date}|{description}|{amount}"
-    return hashlib.md5(raw_str.encode()).hexdigest()
+ 
