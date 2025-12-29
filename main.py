@@ -108,11 +108,17 @@ def categorize_with_llm(descriptions, user_categories):
     {json.dumps(descriptions)}
     """
 
+    # 2. Initialize the model WITH the instructions
+    model = GenerativeModel(
+        "gemini-2.5-flash-lite",
+        system_instruction=[system_instruction] # Must be a list or Content object
+    )
+    
+    # 3. Clean up the call
     response = model.generate_content(
-            f"Categorize: {json.dumps(descriptions)}",
-            system_instruction=system_instruction,
-            generation_config={"response_mime_type": "application/json"}
-        )    
+        f"Categorize: {json.dumps(descriptions)}",
+        generation_config={"response_mime_type": "application/json"}
+    )
     # Clean potential markdown wrapping from LLM response
     clean_text = response.text.replace("```json", "").replace("```", "").strip()
     try:
