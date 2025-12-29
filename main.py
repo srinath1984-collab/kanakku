@@ -275,9 +275,9 @@ async def upload_expenses(files: list[UploadFile] = File(...), authorization: st
             
             # Logic: If Debit/Credit exist, use them. Otherwise use general Amount.
             if d_val != 0:
-                amt = d_val
+                amt = abs(d_val)
             elif c_val != 0:
-                amt = -c_val # Negative means Income
+                amt = -1*abs(c_val) # Negative means Income
             else:
                 amt = a_val # Could be + or - depending on bank
 
