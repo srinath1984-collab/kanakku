@@ -94,6 +94,9 @@ def categorize_with_llm(descriptions, user_categories):
 
     # Inject the user's specific categories into the prompt
     category_list_str = ", ".join(user_categories)
+    # Ensure 'Excluded' is in the list sent to the LLM even if it's hidden in the UI
+    if "Excluded" not in user_categories:
+        user_categories.append("Excluded")
     system_instruction = f"""
     You are a financial assistant. Categorize these transactions into EXACTLY ONE 
     of these user-defined categories: {category_list_str}, or 'Other'.
@@ -106,6 +109,10 @@ def categorize_with_llm(descriptions, user_categories):
     
     Transactions to categorize:
     {json.dumps(descriptions)}
+
+    SPECIAL RULE: If a transaction looks like a credit card payment, 
+    a transfer between accounts, or a self-payment, use the 'Excluded' category.
+    Examples: "CC PAYMENT", "AUTOPAY", "TRANSFER TO SAVINGS".
     """
 
     # 2. Initialize the model WITH the instructions
@@ -352,6 +359,8 @@ async def get_summary(month: str = None, authorization: str = Header(None)):
         count = count + 1
         data = exp.to_dict()
         cat = data.get('category', 'Other')
+        if cat == "Excluded":
+            continue
         amt = data.get('amount', 0)
         summary[cat] = summary.get(cat, 0) + amt
     print(f"DEBUG: Successfully retrieved {count} expense documents for {user_email}")
