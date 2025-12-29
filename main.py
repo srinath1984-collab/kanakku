@@ -142,25 +142,37 @@ async def update_transaction(data: UpdateTx, authorization: str = Header(None)):
     
 @app.get("/drilldown")
 async def get_drilldown(month: str, categories: str = None, authorization: str = Header(None)):
-    user_email = verify_user(authorization.split(" ")[1]).lower().strip()
-    
-    query = db.collection("users").document(user_email).collection("expenses")
-    query = query.where("month_key", "==", month)
-    
-    # categories is a comma-separated string from the frontend
-    if categories:
-        cat_list = categories.split(",")
-        # Use 'in' operator for multiple categories
-        query = query.where("category", "in", cat_list)
-    
-    docs = query.order_by("date", direction=firestore.Query.DESCENDING).stream()
-    
-    results = []
-    for doc in docs:
-        data = doc.to_dict()
-        data['id'] = doc.id  # <--- CRUCIAL: Add the Firestore ID to the dict
-        results.append(data)
-    return results    
+    try:
+        user_email = verify_user(authorization.split(" ")[1]).lower().strip()
+        
+        query = db.collection("users").document(user_email).collection("expenses")
+        query = query.where("month_key", "==", month)
+        
+        # Handle the case where categories might be an empty string
+        if categories and categories.strip():
+            cat_list = [c.strip() for c in categories.split(",") if c.strip()]
+            if cat_list:
+                query = query.where("category", "in", cat_list)
+        
+        # If order_by causes a 500, it's usually a missing index. 
+        # Let's try fetching without sorting first to verify data exists.
+        docs = query.stream()
+        
+        results = []
+        for doc in docs:
+            data = doc.to_dict()
+            data['id'] = doc.id
+            results.append(data)
+            
+        # Sort manually in Python to avoid needing a complex Firestore Index for now
+        results.sort(key=lambda x: x.get('date', ''), reverse=True)
+        
+        return results
+
+    except Exception as e:
+        print(f"DRILLDOWN ERROR: {str(e)}")
+        # Returning a proper HTTPException ensures CORS headers are still sent
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/analytics")
 async def get_analytics(authorization: str = Header(None)):
