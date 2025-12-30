@@ -118,17 +118,24 @@ async def categorize_with_llm_async(descriptions, user_categories):
         system_instruction=[system_instruction] # Must be a list or Content object
     )
     
-    # 3. Clean up the call
-    response = await model.generate_content_async(
-        f"Categorize: {json.dumps(keyed_input)}",
-        generation_config={"response_mime_type": "application/json", "temperature": 0.1}
-    )
-    # Clean potential markdown wrapping from LLM response
-    clean_text = response.text.replace("```json", "").replace("```", "").strip()
     try:
-        return json.loads(clean_text)
-    except:
-        # Fallback if JSON parsing fails
+        response = await model.generate_content_async(
+            json.dumps(keyed_input),
+            generation_config={"response_mime_type": "application/json"}
+        )
+        
+        # 2. Parse the dictionary back into a list in the CORRECT order
+        res_dict = json.loads(response.text)
+        
+        # Reconstruct list by checking every index to guarantee length
+        final_list = []
+        for i in range(len(descriptions)):
+            final_list.append(res_dict.get(str(i), "Other"))
+            
+        return final_list
+        
+    except Exception as e:
+        print(f"LLM Error: {e}")
         return ["Other"] * len(descriptions)
         
 class UpdateTx(BaseModel):
