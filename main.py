@@ -334,23 +334,38 @@ async def upload_expenses(files: list[UploadFile] = File(...), authorization: st
 
     # 3. Save to Firestore
     print("DEBUG: 7. Starting Firestore Writes...")
-    user_ref = db.collection("users").document(user_email).collection("expenses")
+    batch = db.batch()
+    count = 0
     for i, row in enumerate(all_rows):
         std_date = parse_to_standard_date(row['date'], dayfirst_pref)
         m_key = parse_to_month_key(row['date'], dayfirst_pref)
         final_cat = "Income" if row['is_income'] else llm_categories[i]
         
         tx_id = generate_tx_id(user_email, std_date, row['raw_desc'], row['amount'])
-        
-        user_ref.document(tx_id).set({
+        doc_ref = db.collection("users").document(user_email).collection("expenses").document(tx_id)
+        # Add operation to the current batch
+        batch.set(doc_ref, {
             "description": row['raw_desc'],
             "amount": row['amount'],
-            "category": final_cat,
+            "category": row.get('final_cat', 'Other'),
             "date": std_date,
             "month_key": m_key,
             "created_at": firestore.SERVER_TIMESTAMP
         }, merge=True)
-    print("DEBUG: 8. Upload Complete")
+    
+        count += 1
+
+        # THE CRITICAL TRIGGER: Every 500 operations, commit and start fresh
+        if count % 500 == 0:
+            print(f"DEBUG: Committing batch of 500 (Total: {count})", flush=True)
+            batch.commit()
+            batch = db.batch() # Re-initialize for the next 500 items
+    # FINAL COMMIT: Send the remaining items (e.g., the last 423 items)
+    if count % 500 != 0:
+        print(f"DEBUG: Committing final batch of {count % 500} items", flush=True)
+        batch.commit()
+    print(f"DEBUG: 8 Successfully wrote {count} documents to Firestore.", flush=True)
+    
     return {"status": "success", "count": len(all_rows)}
     
 @app.get("/summary")
