@@ -100,9 +100,16 @@ async def categorize_with_llm_async(descriptions, user_categories):
     category_list_str = ", ".join(user_categories)
     print(f"DEBUG: categories for gemini are {category_list_str}")
     system_instruction = f"""
-    You are a financial assistant. Categorize these transactions into EXACTLY ONE 
-    of these user-defined categories: {category_list_str}, or 'Other'.
-    Return a JSON object where the keys match the input IDs.
+    You are a precision financial classifier. 
+    TASK: Map each transaction ID to the MOST LIKELY category from this list: {category_list_str}.
+    
+    RULES:
+    1. You MUST return a category for EVERY key provided.
+    2. Only use 'Other' if there is absolutely no semantic match.
+    3. Use 'Income' for salaries, rewards, or refunds.
+    4. Use 'Excluded' for credit card payments or transfers.
+    
+    OUTPUT: Return a JSON object where the keys match the input IDs.
     Example: {{"0": "Food", "1": "Transport"}}. 
     
     Transactions to categorize:
