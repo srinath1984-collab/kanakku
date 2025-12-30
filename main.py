@@ -92,7 +92,7 @@ def categorize_expense(description):
 async def categorize_with_llm_async(descriptions, user_categories):
     if not descriptions:
         return []
-
+    keyed_input = {str(i): desc for i, desc in enumerate(descriptions)}
     # Inject the user's specific categories into the prompt
     category_list_str = ", ".join(user_categories)
     # Ensure 'Excluded' is in the list sent to the LLM even if it's hidden in the UI
@@ -101,15 +101,11 @@ async def categorize_with_llm_async(descriptions, user_categories):
     system_instruction = f"""
     You are a financial assistant. Categorize these transactions into EXACTLY ONE 
     of these user-defined categories: {category_list_str}, or 'Other'.
-    Return ONLY a JSON list of strings in the same order as the input. No markdown, no explanation.
-    
-    Examples:
-    "UBER PENDING" -> "Transport"
-    "ZOMATO*RESTAURANT" -> "Food"
-    "REVERSAL-FEE" -> "Income"
+    Return a JSON object where the keys match the input IDs.
+    Example: {{"0": "Food", "1": "Transport"}}. 
     
     Transactions to categorize:
-    {json.dumps(descriptions)}
+    {json.dumps(keyed_input)}
 
     SPECIAL RULE: If a transaction looks like a credit card payment, 
     a transfer between accounts, or a self-payment, use the 'Excluded' category.
@@ -124,7 +120,7 @@ async def categorize_with_llm_async(descriptions, user_categories):
     
     # 3. Clean up the call
     response = await model.generate_content_async(
-        f"Categorize: {json.dumps(descriptions)}",
+        f"Categorize: {json.dumps(keyed_input)}",
         generation_config={"response_mime_type": "application/json", "temperature": 0.1}
     )
     # Clean potential markdown wrapping from LLM response
@@ -313,7 +309,7 @@ async def upload_expenses(files: list[UploadFile] = File(...), authorization: st
     print("DEBUG: 5. Calling Gemini LLM...")
     try:
         descriptions = [r['raw_desc'] for r in all_rows]
-        chunk_size = 50
+        chunk_size = 30
         chunks = [descriptions[i:i + chunk_size] for i in range(0, len(descriptions), chunk_size)]
         print(f"DEBUG: Parallel processing {len(chunks)} chunks...")
         # FIRE ALL REQUESTS AT ONCE
