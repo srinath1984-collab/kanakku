@@ -88,7 +88,7 @@ def categorize_expense(description):
                 return category
     return 'Other'
 
-def categorize_with_llm_async(descriptions, user_categories):
+async def categorize_with_llm_async(descriptions, user_categories):
     if not descriptions:
         return []
 
