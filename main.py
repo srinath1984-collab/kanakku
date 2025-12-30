@@ -94,10 +94,11 @@ async def categorize_with_llm_async(descriptions, user_categories):
         return []
     keyed_input = {str(i): desc for i, desc in enumerate(descriptions)}
     # Inject the user's specific categories into the prompt
-    category_list_str = ", ".join(user_categories)
     # Ensure 'Excluded' is in the list sent to the LLM even if it's hidden in the UI
     if "Excluded" not in user_categories:
         user_categories.append("Excluded")
+    category_list_str = ", ".join(user_categories)
+    print(f"DEBUG: categories for gemini are {category_list_str}")
     system_instruction = f"""
     You are a financial assistant. Categorize these transactions into EXACTLY ONE 
     of these user-defined categories: {category_list_str}, or 'Other'.
