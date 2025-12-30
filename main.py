@@ -88,7 +88,7 @@ def categorize_expense(description):
                 return category
     return 'Other'
 
-def categorize_with_llm(descriptions, user_categories):
+def categorize_with_llm_async(descriptions, user_categories):
     if not descriptions:
         return []
 
@@ -122,9 +122,9 @@ def categorize_with_llm(descriptions, user_categories):
     )
     
     # 3. Clean up the call
-    response = model.generate_content(
+    response = await model.generate_content_async(
         f"Categorize: {json.dumps(descriptions)}",
-        generation_config={"response_mime_type": "application/json"}
+        generation_config={"response_mime_type": "application/json", "temperature": 0.1}
     )
     # Clean potential markdown wrapping from LLM response
     clean_text = response.text.replace("```json", "").replace("```", "").strip()
@@ -312,7 +312,17 @@ async def upload_expenses(files: list[UploadFile] = File(...), authorization: st
     print("DEBUG: 5. Calling Gemini LLM...")
     try:
         descriptions = [r['raw_desc'] for r in all_rows]
-        llm_categories = categorize_with_llm(descriptions, user_categories)
+        chunk_size = 50
+        chunks = [descriptions[i:i + chunk_size] for i in range(0, len(descriptions), chunk_size)]
+        print(f"DEBUG: Parallel processing {len(chunks)} chunks...")
+        # FIRE ALL REQUESTS AT ONCE
+        tasks = [categorize_with_llm_async(chunk, user_categories) for chunk in chunks]
+        chunk_results = await asyncio.gather(*tasks)
+    
+        # Flatten the list of lists into one single list of categories
+        llm_categories = [item for sublist in chunk_results for item in sublist]
+        
+        #llm_categories = categorize_with_llm(descriptions, user_categories)
         print(f"DEBUG: 6. Gemini returned {len(llm_categories)} categories")
     except Exception as e:
         print(f"DEBUG: 6. ERROR: Gemini Failed: {str(e)}")
