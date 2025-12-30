@@ -348,6 +348,7 @@ async def upload_expenses(files: list[UploadFile] = File(...), authorization: st
         std_date = parse_to_standard_date(row['date'], dayfirst_pref)
         m_key = parse_to_month_key(row['date'], dayfirst_pref)
         final_cat = "Income" if row['is_income'] else llm_categories[i]
+        print("DEBUG: 7A final_cat = {llm_categories[i]} for desc {raw_desc}")
         
         tx_id = generate_tx_id(user_email, std_date, row['raw_desc'], row['amount'])
         doc_ref = db.collection("users").document(user_email).collection("expenses").document(tx_id)
