@@ -12,6 +12,7 @@ import vertexai
 from vertexai.generative_models import GenerativeModel
 import json
 from pydantic import BaseModel
+import asyncio
 
 app = FastAPI()
 db = firestore.Client(database="kanakku")
