@@ -35,6 +35,16 @@ CATEGORY_MAP = {
     'Transport': ['uber', 'ola', 'petrol'],
     # ... add the rest of your map here ...
 }
+
+DEFAULT_PREFS = {
+    "currency": "$",
+    "dayfirst": False,
+    "categories": [
+        "Food", "Transport", "Shopping", "Bills", 
+        "Entertainment", "Income", "Subscription", 
+        "Fuel", "Excluded", "Other"
+    ]
+}
    
 def self_clean_float(val):
     """Utility to turn messy CSV strings into clean floats."""
@@ -245,9 +255,9 @@ async def get_prefs(authorization: str = Header(None)):
     user_email = verify_user(authorization.split(" ")[1]).lower().strip()
     doc = db.collection("users").document(user_email).collection("settings").document("preferences").get()
     if doc.exists:
-        return doc.to_dict()
+        return {**DEFAULT_PREFS, **doc.to_dict()}
     # Default values
-    return {"currency": "₹", "dayfirst": True}
+    return DEFAULT_PREFS
 
 @app.post("/preferences")
 async def save_prefs(prefs: dict, authorization: str = Header(None)):
@@ -274,10 +284,15 @@ async def upload_expenses(files: list[UploadFile] = File(...), authorization: st
     user_email = verify_user(token).lower().strip()
     
     prefs_doc = db.collection("users").document(user_email).collection("settings").document("preferences").get()
-    dayfirst_pref = prefs_doc.to_dict().get('dayfirst', True) if prefs_doc.exists else True
-    prefs_data = prefs_doc.to_dict() if prefs_doc.exists else {}
-    user_categories = prefs_data.get('categories', ["Food", "Transport", "Shopping", "Bills", "Entertainment", "Income", "Subscription", "Fuel", "Other"])
-
+    if prefs_doc.exists:
+        data = prefs_doc.to_dict()
+        dayfirst_pref = data.get('dayfirst', DEFAULT_PREFS["dayfirst"])
+        user_categories = data.get('categories', DEFAULT_PREFS["categories"])
+    else:
+        # Fallback for brand new users
+        dayfirst_pref = DEFAULT_PREFS["dayfirst"]
+        user_categories = DEFAULT_PREFS["categories"]
+    
     all_rows = []
 
     for file in files:
