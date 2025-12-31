@@ -98,63 +98,66 @@ def categorize_expense(description):
             if key in desc:
                 return category
     return 'Other'
-
+    
+# Initialize semaphore (e.g., limit to 5 concurrent LLM calls)
+llm_semaphore = asyncio.Semaphore(5)
 async def categorize_with_llm_async(descriptions, user_categories):
     if not descriptions:
         return []
-    keyed_input = {str(i): desc for i, desc in enumerate(descriptions)}
-    # Inject the user's specific categories into the prompt
-    # Ensure 'Excluded' is in the list sent to the LLM even if it's hidden in the UI
-    if "Excluded" not in user_categories:
-        user_categories.append("Excluded")
-    category_list_str = ", ".join(user_categories)
-    print(f"DEBUG: categories for gemini are {category_list_str}")
-    system_instruction = f"""
-    You are a precision financial classifier. 
-    TASK: Map each transaction ID to the MOST LIKELY category from this list: {category_list_str}.
+    async with llm_semaphore:
+        keyed_input = {str(i): desc for i, desc in enumerate(descriptions)}
+        # Inject the user's specific categories into the prompt
+        # Ensure 'Excluded' is in the list sent to the LLM even if it's hidden in the UI
+        if "Excluded" not in user_categories:
+            user_categories.append("Excluded")
+        category_list_str = ", ".join(user_categories)
+        print(f"DEBUG: categories for gemini are {category_list_str}")
+        system_instruction = f"""
+        You are a precision financial classifier. 
+        TASK: Map each transaction ID to the MOST LIKELY category from this list: {category_list_str}.
+        
+        RULES:
+        1. You MUST return a category for EVERY key provided.
+        2. Only use 'Other' if there is absolutely no semantic match.
+        3. Use 'Income' for salaries, rewards, or refunds.
+        4. Use 'Excluded' for credit card payments or transfers.
+        
+        OUTPUT: Return a JSON object where the keys match the input IDs.
+        Example: {{"0": "Food", "1": "Transport"}}. 
+        
+        Transactions to categorize:
+        {json.dumps(keyed_input)}
     
-    RULES:
-    1. You MUST return a category for EVERY key provided.
-    2. Only use 'Other' if there is absolutely no semantic match.
-    3. Use 'Income' for salaries, rewards, or refunds.
-    4. Use 'Excluded' for credit card payments or transfers.
+        SPECIAL RULE: If a transaction looks like a credit card payment, 
+        a transfer between accounts, or a self-payment, use the 'Excluded' category.
+        Examples: "CC PAYMENT", "AUTOPAY", "TRANSFER TO SAVINGS", "ONLINE PAYMENT".
+        """
     
-    OUTPUT: Return a JSON object where the keys match the input IDs.
-    Example: {{"0": "Food", "1": "Transport"}}. 
-    
-    Transactions to categorize:
-    {json.dumps(keyed_input)}
-
-    SPECIAL RULE: If a transaction looks like a credit card payment, 
-    a transfer between accounts, or a self-payment, use the 'Excluded' category.
-    Examples: "CC PAYMENT", "AUTOPAY", "TRANSFER TO SAVINGS", "ONLINE PAYMENT".
-    """
-
-    # 2. Initialize the model WITH the instructions
-    model = GenerativeModel(
-        "gemini-2.5-flash-lite",
-        system_instruction=[system_instruction] # Must be a list or Content object
-    )
-    
-    try:
-        response = await model.generate_content_async(
-            json.dumps(keyed_input),
-            generation_config={"response_mime_type": "application/json"}
+        # 2. Initialize the model WITH the instructions
+        model = GenerativeModel(
+            "gemini-2.5-flash-lite",
+            system_instruction=[system_instruction] # Must be a list or Content object
         )
         
-        # 2. Parse the dictionary back into a list in the CORRECT order
-        res_dict = json.loads(response.text)
-        
-        # Reconstruct list by checking every index to guarantee length
-        final_list = []
-        for i in range(len(descriptions)):
-            final_list.append(res_dict.get(str(i), "Other"))
+        try:
+            response = await model.generate_content_async(
+                json.dumps(keyed_input),
+                generation_config={"response_mime_type": "application/json"}
+            )
             
-        return final_list
-        
-    except Exception as e:
-        print(f"LLM Error: {e}")
-        return ["Other"] * len(descriptions)
+            # 2. Parse the dictionary back into a list in the CORRECT order
+            res_dict = json.loads(response.text)
+            
+            # Reconstruct list by checking every index to guarantee length
+            final_list = []
+            for i in range(len(descriptions)):
+                final_list.append(res_dict.get(str(i), "Other"))
+                
+            return final_list
+            
+        except Exception as e:
+            print(f"LLM Error: {e}")
+            return ["Other"] * len(descriptions)
         
 class UpdateTx(BaseModel):
     doc_id: str
@@ -276,7 +279,10 @@ async def get_months(authorization: str = Header(None)):
     months = sorted(list(set(d.to_dict().get('month_key') for d in docs if d.to_dict().get('month_key'))), reverse=True)
     
     return {"months": months}    
-    
+
+MAX_FILE_SIZE = 2 * 1024 * 1024 # 2MB Limit
+MAX_ROWS = 2000 # Max transactions per upload
+
 @app.post("/upload")
 async def upload_expenses(files: list[UploadFile] = File(...), authorization: str = Header(None)):
     print("DEBUG: 1. Upload endpoint hit")
@@ -297,7 +303,11 @@ async def upload_expenses(files: list[UploadFile] = File(...), authorization: st
 
     for file in files:
         content = await file.read() # Read content
+        if len(content) > MAX_FILE_SIZE:
+            raise HTTPException(status_code=413, detail=f"File {file.filename} is too large (Max 2MB).")
         df = pd.read_csv(io.BytesIO(content))
+        if len(df) > MAX_ROWS:
+            raise HTTPException(status_code=413, detail=f"CSV exceeds limit of {MAX_ROWS} transactions.")
         df.columns = [c.lower().strip() for c in df.columns]
         print(f"DEBUG: 2. File read. Rows in CSV: {len(df)}")
         
