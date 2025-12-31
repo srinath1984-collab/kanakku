@@ -127,7 +127,7 @@ async def categorize_with_llm_async(descriptions, user_categories):
 
     SPECIAL RULE: If a transaction looks like a credit card payment, 
     a transfer between accounts, or a self-payment, use the 'Excluded' category.
-    Examples: "CC PAYMENT", "AUTOPAY", "TRANSFER TO SAVINGS".
+    Examples: "CC PAYMENT", "AUTOPAY", "TRANSFER TO SAVINGS", "ONLINE PAYMENT".
     """
 
     # 2. Initialize the model WITH the instructions
