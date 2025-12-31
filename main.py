@@ -316,6 +316,8 @@ async def upload_expenses(files: list[UploadFile] = File(...), authorization: st
         debit_col = next((c for c in ['debit', 'withdrawal', 'dr'] if c in df.columns), None)
         credit_col = next((c for c in ['credit', 'deposit', 'cr'] if c in df.columns), None)
         amt_col = next((c for c in ['amount', 'value', 'transaction amount'] if c in df.columns), None)
+        date_col = next((c for c in ['date', 'Posting Date', 'remarks', 'details'] if c in df.columns), None)
+
 
         for _, row in df.iterrows():
             # Try specific columns first, then general amount column
@@ -337,7 +339,7 @@ async def upload_expenses(files: list[UploadFile] = File(...), authorization: st
                 "raw_desc": str(row.get(desc_col, "Unknown")),
                 "amount": abs(amt),
                 "is_income": amt < 0,
-                "date": str(row.get('date', ''))
+                "date": str(row.get(date_col, ''))
             })
     print(f"DEBUG 3: Done parsing {len(all_rows)}")
 
