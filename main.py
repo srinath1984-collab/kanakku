@@ -283,8 +283,29 @@ async def get_months(authorization: str = Header(None)):
 MAX_FILE_SIZE = 2 * 1024 * 1024 # 2MB Limit
 MAX_ROWS = 2000 # Max transactions per upload
 
+def normalize_row(row, debit_col, credit_col, amt_col, mode):
+    """
+    Normalizes a row into a consistent (amount, is_income) tuple.
+    Modes: 'standard' (Pos=Income), 'inverted' (Pos=Expense)
+    """
+    # 1. Handle Explicit Columns (Highest Priority)
+    if debit_col and credit_col:
+        d_val = self_clean_float(row.get(debit_col))
+        c_val = self_clean_float(row.get(credit_col))
+        if c_val != 0: return abs(c_val), True
+        if d_val != 0: return abs(d_val), False
+
+    # 2. Handle Single Amount Column
+    raw_amt = self_clean_float(row.get(amt_col))
+    if mode == 'inverted':
+        # Pos is Debit (Expense), Neg is Credit (Income)
+        return abs(raw_amt), raw_amt < 0
+    else:
+        # Standard: Pos is Credit (Income), Neg is Debit (Expense)
+        return abs(raw_amt), raw_amt > 0
+        
 @app.post("/upload")
-async def upload_expenses(files: list[UploadFile] = File(...), authorization: str = Header(None)):
+async def upload_expenses(files: list[UploadFile] = File(...), import_mode: str = Form("auto"), authorization: str = Header(None)):
     print("DEBUG: 1. Upload endpoint hit")
     token = authorization.split(" ")[1]
     user_email = verify_user(token).lower().strip()
@@ -318,27 +339,44 @@ async def upload_expenses(files: list[UploadFile] = File(...), authorization: st
         amt_col = next((c for c in ['amount', 'value', 'transaction amount'] if c in df.columns), None)
         date_col = next((c for c in ['date', 'Posting Date', 'remarks', 'details'] if c in df.columns), None)
 
-
-        for _, row in df.iterrows():
-            # Try specific columns first, then general amount column
-            d_val = self_clean_float(row.get(debit_col)) if debit_col else 0.0
-            c_val = self_clean_float(row.get(credit_col)) if credit_col else 0.0
-            a_val = self_clean_float(row.get(amt_col)) if amt_col else 0.0
-            
-            # Logic: If Debit/Credit exist, use them. Otherwise use general Amount.
-            if d_val != 0:
-                amt = abs(d_val)
-            elif c_val != 0:
-                amt = -1*abs(c_val) # Negative means Income
+        effective_mode = import_mode
+        if effective_mode == "auto":
+            if debit_col and credit_col:
+                effective_mode = "explicit"
             else:
-                amt = a_val # Could be + or - depending on bank
+                effective_mode = "standard" # Default: Pos=Income (Bank Style)
+        for _, row in df.iterrows():
+            is_income = False
+            final_amt = 0.0
 
-            if amt == 0: continue
+            if effective_mode == "explicit":
+                d_val = self_clean_float(row.get(debit_col))
+                c_val = self_clean_float(row.get(credit_col))
+                if c_val != 0:
+                    final_amt, is_income = abs(c_val), True
+                elif d_val != 0:
+                    final_amt, is_income = abs(d_val), False
+            
+            else:
+                raw_amt = self_clean_float(row.get(amt_col))
+                if raw_amt == 0: continue
+                
+                if effective_mode == "inverted":
+                    # Mode: Positive is Expense (Standard US Credit Card style)
+                    is_income = raw_amt < 0
+                else:
+                    # Mode: Positive is Income (Standard Bank style)
+                    is_income = raw_amt > 0
+                
+                final_amt = abs(raw_amt)
+
+            if final_amt == 0: continue
+
 
             all_rows.append({
                 "raw_desc": str(row.get(desc_col, "Unknown")),
-                "amount": abs(amt),
-                "is_income": amt < 0,
+                "amount": final_amt,
+                "is_income": is_income,
                 "date": str(row.get(date_col, ''))
             })
     print(f"DEBUG 3: Done parsing {len(all_rows)}")
