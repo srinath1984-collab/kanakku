@@ -331,6 +331,7 @@ async def upload_expenses(files: list[UploadFile] = File(...), import_mode: str 
             raise HTTPException(status_code=413, detail=f"CSV exceeds limit of {MAX_ROWS} transactions.")
         df.columns = [c.lower().strip() for c in df.columns]
         print(f"DEBUG: 2. File read. Rows in CSV: {len(df)}")
+        print(f"DEBUG: 2c. Columns in CSV: {df.columns}")
         
         # Enhanced Detection: Look for 'amount' if debit/credit aren't found
         desc_col = next((c for c in ['description', 'narration', 'remarks', 'details'] if c in df.columns), None)
@@ -373,7 +374,7 @@ async def upload_expenses(files: list[UploadFile] = File(...), import_mode: str 
 
             if final_amt == 0: continue
             date = str(row.get(date_col, ''))
-            printf(f"DEBUG:2B date is {date}")
+            print(f"DEBUG:2B date is {date}")
             all_rows.append({
                 "raw_desc": str(row.get(desc_col, "Unknown")),
                 "amount": final_amt,
