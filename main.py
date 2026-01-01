@@ -338,7 +338,7 @@ async def upload_expenses(files: list[UploadFile] = File(...), import_mode: str 
         debit_col = next((c for c in ['debit', 'withdrawal', 'dr'] if c in df.columns), None)
         credit_col = next((c for c in ['credit', 'deposit', 'cr'] if c in df.columns), None)
         amt_col = next((c for c in ['amount', 'value', 'transaction amount'] if c in df.columns), None)
-        date_col = next((c for c in ['date', 'Posting Date'] if c in df.columns), None)
+        date_col = next((c for c in ['date', 'posting date'] if c in df.columns), None)
         print(f"DEBUG: 2A date_col {date_col}")
 
         effective_mode = import_mode
