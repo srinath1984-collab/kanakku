@@ -372,8 +372,8 @@ async def upload_expenses(files: list[UploadFile] = File(...), import_mode: str 
                 final_amt = abs(raw_amt)
 
             if final_amt == 0: continue
-
-            printf(f"DEBUG:2B date is {str(row.get(date_col, ''))}")
+            date = str(row.get(date_col, ''))
+            printf(f"DEBUG:2B date is {date}")
             all_rows.append({
                 "raw_desc": str(row.get(desc_col, "Unknown")),
                 "amount": final_amt,
