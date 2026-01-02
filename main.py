@@ -121,6 +121,7 @@ async def categorize_with_llm_async(descriptions, user_categories):
         2. Only use 'Other' if there is absolutely no semantic match.
         3. Use 'Income' for salaries, rewards, or refunds.
         4. Use 'Excluded' for credit card payments or transfers.
+        5. ONLY use categories from the provided list. If no match exists, use 'Other'. DO NOT invent new categories.
         
         OUTPUT: Return a JSON object where the keys match the input IDs.
         Example: {{"0": "Food", "1": "Transport"}}. 
