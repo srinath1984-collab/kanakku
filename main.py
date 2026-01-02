@@ -13,12 +13,14 @@ from vertexai.generative_models import GenerativeModel
 import json
 from pydantic import BaseModel
 import asyncio
+from polarity_computer import PolarityComputer  # <--- Import your separate file
 
 app = FastAPI()
 db = firestore.Client(database="kanakku")
 # Initialize Vertex AI (Cloud Run handles credentials automatically)
 vertexai.init(project="kanakku-477505", location="us-central1")
 model = GenerativeModel("gemini-2.5-flash-lite")
+computer = PolarityComputer() # Initialize it once
 
 # Replace with your actual Google Client ID from GCP Console
 GOOGLE_CLIENT_ID = "940001353287-3mu3k6jd76haav5dn6tfemu46mk76dnt.apps.googleusercontent.com"
@@ -306,7 +308,7 @@ def normalize_row(row, debit_col, credit_col, amt_col, mode):
         return abs(raw_amt), raw_amt > 0
         
 @app.post("/upload")
-async def upload_expenses(files: list[UploadFile] = File(...), import_mode: str = Form("auto"), authorization: str = Header(None)):
+async def upload_expenses(files: list[UploadFile] = File(...), authorization: str = Header(None)):
     print("DEBUG: 1. Upload endpoint hit")
     token = authorization.split(" ")[1]
     user_email = verify_user(token).lower().strip()
@@ -342,12 +344,7 @@ async def upload_expenses(files: list[UploadFile] = File(...), import_mode: str 
         date_col = next((c for c in ['date', 'posting date'] if c in df.columns), None)
         print(f"DEBUG: 2A date_col {date_col}")
 
-        effective_mode = import_mode
-        if effective_mode == "auto":
-            if debit_col and credit_col:
-                effective_mode = "explicit"
-            else:
-                effective_mode = "standard" # Default: Pos=Income (Bank Style)
+        effective_mode = await computer.compute_mode(df, debit_col, credit_col, amt_col)
         for _, row in df.iterrows():
             is_income = False
             final_amt = 0.0
