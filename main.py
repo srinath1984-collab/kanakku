@@ -342,7 +342,6 @@ async def upload_expenses(files: list[UploadFile] = File(...), authorization: st
         credit_col = next((c for c in ['credit', 'deposit', 'cr'] if c in df.columns), None)
         amt_col = next((c for c in ['amount', 'value', 'transaction amount'] if c in df.columns), None)
         date_col = next((c for c in ['date', 'posting date'] if c in df.columns), None)
-        print(f"DEBUG: 2A date_col {date_col}")
 
         effective_mode = await computer.compute_mode(df, debit_col, credit_col, amt_col)
         for _, row in df.iterrows():
@@ -372,7 +371,6 @@ async def upload_expenses(files: list[UploadFile] = File(...), authorization: st
 
             if final_amt == 0: continue
             date = str(row.get(date_col, ''))
-            print(f"DEBUG:2B date is {date}")
             all_rows.append({
                 "raw_desc": str(row.get(desc_col, "Unknown")),
                 "amount": final_amt,
@@ -476,8 +474,7 @@ async def get_summary(month: str = None, authorization: str = Header(None)):
         elif cat != "Excluded":
             total_expense += amt
             # Keep category breakdown for the list
-            summary[cat] = summary.get(cat, 0) + amt
-    print(f"DEBUG: Successfully retrieved {count} expense documents for {user_email}")
+    print(f"DEBUG: Breakdown = {summary}")
     return {
         "breakdown": summary,
         "total_income": total_income,
