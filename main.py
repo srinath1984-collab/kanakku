@@ -42,7 +42,7 @@ DEFAULT_PREFS = {
     "currency": "$",
     "dayfirst": False,
     "categories": [
-        "Food", "Transport", "Shopping", "Bills", 
+        "Groceries", "Dining, "Transport", "Shopping", "Bills", 
         "Entertainment", "Income", "Subscription", 
         "Fuel", "Excluded", "Other"
     ]
