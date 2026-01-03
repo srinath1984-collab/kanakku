@@ -27,15 +27,22 @@ class PolarityComputer:
 
     async def _get_llm_guess(self, csv_text):
         prompt = f"""
-        Analyze these 5 rows of a bank statement. 
-        Determine the 'mode':
-        - 'standard': One amount column. Positive is Income (Salary/Refund).
-        - 'inverted': One amount column. Positive is Expense (Amazon/Uber).
-        
-        CSV Sample:
-        {csv_text}
-        
-        Return ONLY a JSON object: {{"mode": "standard" | "inverted"}}
+            Analyze these 5 rows of a bank statement.
+            
+            TASK: Determine the 'mode' based on merchant intent:
+            - 'standard': Positive values are Income (Salary, Interest, Transfers In).
+            - 'inverted': Positive values are Expenses (Shopping, Dining, Uber).
+            
+            CSV Sample:
+            {csv_text}
+            
+            STEPS:
+            1. Identify a clear expense (e.g., Uber, Zomato, Rent).
+            2. Check its sign in the sample.
+            3. If an expense is POSITIVE, the mode is 'inverted'.
+            4. If an expense is NEGATIVE, the mode is 'standard'.
+            
+            Return ONLY a JSON object: {{"reasoning": "...", "mode": "standard" | "inverted"}}
         """
         
         config = GenerationConfig(
