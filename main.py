@@ -458,6 +458,8 @@ async def get_summary(month: str = None, authorization: str = Header(None)):
     print(f"DEBUG: Starting retrieval for {user_email}")    
     summary = {}
     count = 0
+    total_income = 0
+    total_expense = 0
     for exp in expenses:
         count = count + 1
         data = exp.to_dict()
@@ -466,6 +468,18 @@ async def get_summary(month: str = None, authorization: str = Header(None)):
             continue
         amt = data.get('amount', 0)
         summary[cat] = summary.get(cat, 0) + amt
+        # 1. Total Income logic (typically 'Income' category)
+        if cat == "Income":
+            total_income += amt
+        
+        # 2. Total Expense logic (Exclude 'Excluded' and 'Income')
+        elif cat != "Excluded":
+            total_expense += amt
+            # Keep category breakdown for the list
+            summary[cat] = summary.get(cat, 0) + amt
     print(f"DEBUG: Successfully retrieved {count} expense documents for {user_email}")
-    return summary
- 
+    return {
+        "breakdown": summary,
+        "total_income": total_income,
+        "total_expense": total_expense
+    } 
